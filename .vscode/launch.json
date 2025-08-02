@@ -1,0 +1,84 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Python Debugger: Current File",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${file}",
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "Python Debugger: Run Main File",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${workspaceFolder}/run.py",
+        "console": "integratedTerminal",
+        "justMyCode": false,
+      },
+      {
+          "name": "Alembic Debug : Upgrade Head",
+          "type": "debugpy",
+          "request": "launch",
+          "program": "${workspaceFolder}/venv/bin/alembic",   // Path to your Alembic executable
+          "args": ["upgrade", "head"],                        // Arguments passed to Alembic
+          "envFile": "${workspaceFolder}/.env",               // Load environment variables from .env
+          "console": "integratedTerminal",                    // Use integrated terminal for output
+          "cwd": "${workspaceFolder}",                        // Working directory
+          "justMyCode": true,                                 // Skip stepping into system code
+      },
+      {
+        "name": "Python Debugger: Unittest Current File",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "unittest",
+        "console": "integratedTerminal",
+        "args": [
+          "discover",
+          "-s", "tests",        // Run tests in the 'tests' folder
+        ],
+        
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src"  // Make sure `src` is included
+        },
+        "justMyCode": false,          
+    },
+    {
+      "name": "Python Debugger: Pytest Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "justMyCode": false,
+      "console": "integratedTerminal",
+      "args": [
+        "${file}",  // Path to your file — change to match yours
+        "-v"
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    
+    {
+      "name": "Debug Alembic Migration",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/venv/bin/alembic",
+      "args": [
+          "revision",
+          "--autogenerate",
+          "-m",
+          "location add ingress_by_task_id"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+          "PYTHONPATH": "${workspaceFolder}"
+      }
+  }
+    ]
+  }
+  

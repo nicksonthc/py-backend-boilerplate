@@ -1,0 +1,208 @@
+name: Bump Version
+
+on:
+  workflow_dispatch:
+    # Manual trigger option remains for explicit version bumping
+    inputs:
+      manual_bump:
+        description: 'Manual bump (overrides commit analysis)'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - 'auto'
+          - patch
+          - minor
+          - major
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - 'version.py'  # Avoid recursive triggers when version is bumped
+
+jobs:
+  analyze-commits:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      bump_type: ${{ steps.determine_version.outputs.bump_type }}
+      should_bump: ${{ steps.determine_version.outputs.should_bump }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Full history for commit analysis
+
+      - name: Get last version tag
+        id: get_last_tag
+        run: |
+          git fetch --tags
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "last_tag=${LAST_TAG}" >> $GITHUB_OUTPUT
+          echo "Last version tag: ${LAST_TAG}"
+
+      - name: Determine version bump
+        id: determine_version
+        run: |
+          # Check for manual override
+          MANUAL_BUMP="${{ github.event.inputs.manual_bump || 'auto' }}"
+          if [ "$MANUAL_BUMP" != "auto" ]; then
+            echo "Using manual bump: $MANUAL_BUMP"
+            echo "bump_type=$MANUAL_BUMP" >> $GITHUB_OUTPUT
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # If triggered by push, analyze commits
+          LAST_TAG=${{ steps.get_last_tag.outputs.last_tag }}
+          
+          # If no tag found, default to comparing with the first commit
+          if [ -z "$LAST_TAG" ]; then
+            COMPARE_WITH=$(git rev-list --max-parents=0 HEAD)
+            echo "No previous tag found, comparing with first commit"
+          else
+            COMPARE_WITH=$LAST_TAG
+            echo "Comparing with last tag: $LAST_TAG"
+          fi
+          
+          # Show commits being analyzed (for debugging)
+          echo "Analyzing commits between $COMPARE_WITH and HEAD:"
+          git log $COMPARE_WITH..HEAD --pretty=format:"%h %s" | head -n 10
+          COMMIT_COUNT=$(git log $COMPARE_WITH..HEAD --pretty=format:"%h" | wc -l)
+          echo "Total commits to analyze: $COMMIT_COUNT"
+
+          # Check for breaking changes (major bump)
+          if git log $COMPARE_WITH..HEAD --pretty=format:"%s" | grep -iE "BREAKING CHANGE|!:|MAJOR"; then
+            echo "BREAKING CHANGE detected, bumping major version"
+            echo "bump_type=major" >> $GITHUB_OUTPUT
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check for features (minor bump)
+          if git log $COMPARE_WITH..HEAD --pretty=format:"%s" | grep -iE "^feat\b|^feature\b|new feature|enhancement|minor"; then
+            echo "New feature detected, bumping minor version"
+            echo "bump_type=minor" >> $GITHUB_OUTPUT
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check for fixes (patch bump)
+          if git log $COMPARE_WITH..HEAD --pretty=format:"%s" | grep -iE "^fix\b|^bug\b|^chore\b|patch|hotfix|update|improve"; then
+            echo "Fix detected, bumping patch version"
+            echo "bump_type=patch" >> $GITHUB_OUTPUT
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Debugging: Show all commit messages analyzed
+          echo "Commit messages analyzed:"
+          git log $COMPARE_WITH..HEAD --pretty=format:"%h %s"
+
+          # No relevant commits found
+          echo "No version-impacting commits found"
+          echo "bump_type=patch" >> $GITHUB_OUTPUT  # Fallback to patch
+          echo "should_bump=true" >> $GITHUB_OUTPUT
+
+      - name: Echo outputs for debugging
+        run: |
+          echo "Outputs from analyze-commits job:"
+          echo "bump_type: ${{ steps.determine_version.outputs.bump_type }}"
+          echo "should_bump: ${{ steps.determine_version.outputs.should_bump }}"
+
+  bump-version:
+    needs: analyze-commits
+    if: ${{ needs.analyze-commits.outputs.should_bump == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev gcc
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'  # Use a stable version
+
+      - name: Echo received outputs for debugging
+        run: |
+          echo "Inputs to bump-version job:"
+          echo "bump_type: ${{ needs.analyze-commits.outputs.bump_type }}"
+          echo "should_bump: ${{ needs.analyze-commits.outputs.should_bump }}"
+          
+      - name: Validate bump_type
+        run: |
+          BUMP_TYPE="${{ needs.analyze-commits.outputs.bump_type }}"
+          if [[ "$BUMP_TYPE" != "major" && "$BUMP_TYPE" != "minor" && "$BUMP_TYPE" != "patch" ]]; then
+            echo "ERROR: Invalid bump_type: $BUMP_TYPE"
+            echo "bump_type must be 'major', 'minor', or 'patch'"
+            exit 1
+          fi
+          echo "Valid bump_type: $BUMP_TYPE"
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Set up Python environment
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=$PWD" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install --no-binary asyncpg -r requirements.txt
+        
+
+      - name: Debug Python path
+        run: |
+            echo "PWD: $PWD"
+            echo "PYTHONPATH: $PYTHONPATH"
+            python -c "import sys; print('\n'.join(sys.path))"
+
+      - name: Bump version
+        id: bump_version
+        run: |
+          export PYTHONPATH=$PWD
+          source venv/bin/activate
+          python scripts/bump_version.py ${{ needs.analyze-commits.outputs.bump_type }}
+          NEW_VERSION=$(python -c "from version import __version__; print(__version__)")
+          echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "Version bumped to ${NEW_VERSION}"
+
+      - name: Commit and push changes
+        run: |
+          git add version.py
+          git commit -m "chore: bump version to ${{ steps.bump_version.outputs.new_version }}"
+          git tag -a "v${{ steps.bump_version.outputs.new_version }}" -m "Version ${{ steps.bump_version.outputs.new_version }}"
+          git push origin HEAD:${GITHUB_REF}
+          git push origin "v${{ steps.bump_version.outputs.new_version }}"
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: "v${{ steps.bump_version.outputs.new_version }}"
+          name: "Release v${{ steps.bump_version.outputs.new_version }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

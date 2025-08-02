@@ -1,0 +1,26 @@
+services:  
+  py-backend:
+    restart : unless-stopped
+    image : 551979302293.dkr.ecr.ap-southeast-1.amazonaws.com/py-backend:latest
+    ports:
+      - "3104:3100"
+      - "3105:2525"
+    volumes:
+      - py-backend-data:/app/logfile
+    env_file:
+      - .env
+    container_name: py-backend
+    stdin_open: true
+    tty: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"         # Rotate when logs reach 10MB
+        max-file: "7"          # Keep last 14 files (approx. 14 days)
+
+
+volumes: 
+  py-backend-data:
+
+
+  
