@@ -6,7 +6,7 @@ The version follows the Semantic Versioning scheme (https://semver.org/):
 MAJOR.MINOR.PATCH
 """
 
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 
 
 def get_version():
