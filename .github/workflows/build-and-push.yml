@@ -1,9 +1,6 @@
 name: Build and Push to ECR
 
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
     inputs:
       tag:
@@ -44,11 +41,8 @@ jobs:
       - name: Set image tag
         id: set-tag
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "TAG=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "TAG=latest" >> $GITHUB_OUTPUT
-          fi
+          echo "TAG=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          echo "Building with tag: ${{ github.event.inputs.tag }}"
 
       - name: Build and push image to ECR
         id: docker_build
